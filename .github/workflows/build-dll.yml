@@ -5,10 +5,9 @@ on: [push]
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Install MinGW
         run: choco install mingw -y
@@ -16,12 +15,18 @@ jobs:
       - name: Add MinGW to PATH
         run: echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Clone ImGui
+        run: git clone https://github.com/ocornut/imgui.git
+
       - name: Build DLL
         run: |
-          g++ -shared -o mycheats.dll mycheats.cpp -static -lgdi32 -ld3d9
+          g++ -shared -o mycheats.dll mycheats.cpp ^
+            imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp ^
+            imgui/backends/imgui_impl_win32.cpp imgui/backends/imgui_impl_dx9.cpp ^
+            -Iimgui -Iimgui/backends -static -lgdi32 -ld3d9
 
       - name: Upload DLL
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: mycheats
           path: mycheats.dll
