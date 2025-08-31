@@ -1,11 +1,41 @@
-g++ -shared -o mycheats.dll \
-    mycheats.cpp \
-    imgui/imgui.cpp \
-    imgui/imgui_draw.cpp \
-    imgui/imgui_widgets.cpp \
-    imgui/imgui_demo.cpp \
-    imgui/backends/imgui_impl_dx9.cpp \
-    imgui/backends/imgui_impl_win32.cpp \
-    -Iimgui \
-    -ld3d9 -ldwmapi -lpsapi -lgdi32 -luser32 \
-    -static-libgcc -static-libstdc++
+name: Build DLL
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup MSYS2 / MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+
+      - name: Install required packages
+        shell: bash
+        run: |
+          pacman -S --needed --noconfirm mingw-w64-x86_64-gcc \
+          mingw-w64-x86_64-d3d9 mingw-w64-x86_64-psapi
+
+      - name: Compile DLL
+        shell: bash
+        run: |
+          g++ -shared -o mycheats.dll \
+              mycheats.cpp \
+              imgui/imgui.cpp \
+              imgui/imgui_draw.cpp \
+              imgui/imgui_widgets.cpp \
+              imgui/imgui_demo.cpp \
+              imgui/backends/imgui_impl_dx9.cpp \
+              imgui/backends/imgui_impl_win32.cpp \
+              -Iimgui \
+              -ld3d9 -ldwmapi -lpsapi -lgdi32 -luser32 \
+              -static-libgcc -static-libstdc++
