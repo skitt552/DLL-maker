@@ -182,7 +182,7 @@ bool IsTargetProcess(const std::wstring& targetExe) {
 }
 
 // ==========================
-// DLL Entry with auto-hook and log
+// DLL Entry with auto-hook
 // ==========================
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
