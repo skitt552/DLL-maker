@@ -12,19 +12,29 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup MSYS2 / MinGW
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
+      # Install MSYS2
+      - name: Install MSYS2
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri https://repo.msys2.org/distrib/x86_64/msys2-base-x86_64-20230907.tar.xz -OutFile msys2.tar.xz
+          tar -xf msys2.tar.xz -C $env:USERPROFILE
+          $env:MSYS2_PATH = "$env:USERPROFILE\msys64\usr\bin"
+          setx PATH "$env:MSYS2_PATH;$env:PATH"
 
-      - name: Install required packages
+      # Update MSYS2 and install MinGW GCC + required libs
+      - name: Setup MinGW and libraries
         shell: bash
         run: |
+          pacman -Syu --noconfirm
           pacman -S --needed --noconfirm mingw-w64-x86_64-gcc \
-          mingw-w64-x86_64-d3d9 mingw-w64-x86_64-psapi
+            mingw-w64-x86_64-d3d9 \
+            mingw-w64-x86_64-psapi \
+            mingw-w64-x86_64-gdi \
+            mingw-w64-x86_64-winpthreads
 
+      # Build the DLL
       - name: Compile DLL
         shell: bash
         run: |
@@ -39,3 +49,10 @@ jobs:
               -Iimgui \
               -ld3d9 -ldwmapi -lpsapi -lgdi32 -luser32 \
               -static-libgcc -static-libstdc++
+
+      # Upload the DLL as an artifact for download
+      - name: Upload DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: mycheats-dll
+          path: mycheats.dll
