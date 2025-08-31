@@ -1,39 +1,11 @@
-name: Build DLL
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup MSYS2 with MinGW
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            make
-
-      - name: Clone ImGui
-        run: git clone https://github.com/ocornut/imgui.git
-
-      - name: Build DLL
-        shell: msys2 {0}
-        run: |
-          g++ -shared -o mycheats.dll mycheats.cpp \
-            imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp \
-            imgui/backends/imgui_impl_dx9.cpp imgui/backends/imgui_impl_win32.cpp \
-            -Iimgui -Iimgui/backends -static -lgdi32 -ld3d9
-
-      - name: Upload DLL
-        uses: actions/upload-artifact@v4
-        with:
-          name: mycheats-dll
-          path: mycheats.dll
+g++ -shared -o mycheats.dll \
+    mycheats.cpp \
+    imgui/imgui.cpp \
+    imgui/imgui_draw.cpp \
+    imgui/imgui_widgets.cpp \
+    imgui/imgui_demo.cpp \
+    imgui/backends/imgui_impl_dx9.cpp \
+    imgui/backends/imgui_impl_win32.cpp \
+    -Iimgui \
+    -ld3d9 -ldwmapi -lpsapi -lgdi32 -luser32 \
+    -static-libgcc -static-libstdc++
