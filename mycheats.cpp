@@ -1,116 +1,72 @@
-// mycheats.cpp
 #include <windows.h>
-#include <d3d9.h>
-
-// ImGui core
 #include "imgui.h"
-
-// ImGui backends
 #include "backends/imgui_impl_dx9.h"
 #include "backends/imgui_impl_win32.h"
 
-// ==========================
-// Configurable Settings
-// ==========================
-struct Config {
-    bool aimbot = true;
-    float aimFov = 120.0f;
-    float aimSmooth = 5.0f;
+// Forward declare WndProc handler
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
+    HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-    bool espBox = true;
-    bool espSkeleton = true;
-    ImVec4 espColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+// Global state
+HWND g_hWnd = nullptr;
+LPDIRECT3DDEVICE9 g_pDevice = nullptr;
+bool g_Running = true;
 
-    bool radar = true;
-    bool triggerbot = false;
-} config;
+// Thread for our ImGui loop
+DWORD WINAPI MainThread(LPVOID lpReserved)
+{
+    // Initialize ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-bool menuOpen = true;
+    ImGui::StyleColorsDark();
 
-// Forward declare Win32 message handler
-extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
+    // Initialize platform/renderer backends
+    ImGui_ImplWin32_Init(g_hWnd);
+    ImGui_ImplDX9_Init(g_pDevice);
 
-// ==========================
-// Render Functions
-// ==========================
-void RenderESP(ImDrawList* drawList) {
-    if (config.espBox)
-        drawList->AddRect(ImVec2(200,200), ImVec2(260,320), ImColor(config.espColor));
-
-    if (config.espSkeleton)
-        drawList->AddLine(ImVec2(230,200), ImVec2(230,320), ImColor(config.espColor), 2.0f);
-}
-
-void RenderRadar(ImDrawList* drawList) {
-    if (!config.radar) return;
-
-    ImVec2 radarPos = ImVec2(100, 100);
-    float radarSize = 120;
-    drawList->AddRect(radarPos, ImVec2(radarPos.x + radarSize, radarPos.y + radarSize), IM_COL32(255,255,255,255));
-    drawList->AddCircleFilled(ImVec2(radarPos.x + radarSize/2, radarPos.y + radarSize/2), 3, IM_COL32(255,0,0,255));
-}
-
-void RenderAimbotFov(ImDrawList* drawList, ImVec2 screenSize) {
-    if (!config.aimbot) return;
-
-    ImVec2 center = ImVec2(screenSize.x/2, screenSize.y/2);
-    drawList->AddCircle(center, config.aimFov, IM_COL32(0,255,0,150), 64, 2.0f);
-}
-
-void RenderMenu() {
-    if (!menuOpen) return;
-
-    ImGui::Begin("Troll Menu");
-
-    ImGui::Checkbox("Aimbot", &config.aimbot);
-    if (config.aimbot) {
-        ImGui::SliderFloat("FOV", &config.aimFov, 10.0f, 360.0f);
-        ImGui::SliderFloat("Smooth", &config.aimSmooth, 1.0f, 20.0f);
-    }
-
-    ImGui::Checkbox("Box ESP", &config.espBox);
-    ImGui::Checkbox("Skeleton ESP", &config.espSkeleton);
-    ImGui::ColorEdit4("ESP Color", (float*)&config.espColor);
-
-    ImGui::Checkbox("2D Radar", &config.radar);
-    ImGui::Checkbox("Triggerbot", &config.triggerbot);
-
-    ImGui::End();
-}
-
-// ==========================
-// Hack Thread
-// ==========================
-DWORD WINAPI HackThread(LPVOID hModule) {
     // Main loop
-    while (true) {
-        if (GetAsyncKeyState(VK_INSERT) & 1) {
-            menuOpen = !menuOpen;
-        }
+    while (g_Running)
+    {
+        ImGui_ImplDX9_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
 
-        ImGuiIO& io = ImGui::GetIO();
-        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+        // Example window
+        ImGui::Begin("Hello from ImGui v4!");
+        ImGui::Text("This is a test overlay.");
+        if (ImGui::Button("Exit"))
+            g_Running = false;
+        ImGui::End();
 
-        RenderESP(drawList);
-        RenderRadar(drawList);
-        RenderAimbotFov(drawList, io.DisplaySize);
+        // Render
+        ImGui::EndFrame();
+        g_pDevice->BeginScene();
+        ImGui::Render();
+        ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+        g_pDevice->EndScene();
 
-        if (menuOpen) RenderMenu();
-
-        Sleep(16);
+        Sleep(10);
     }
 
-    FreeLibraryAndExitThread((HMODULE)hModule, 0);
+    // Cleanup
+    ImGui_ImplDX9_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+
+    FreeLibraryAndExitThread((HMODULE)lpReserved, 0);
     return 0;
 }
 
-// ==========================
-// DllMain
-// ==========================
-BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
-    if (dwReason == DLL_PROCESS_ATTACH) {
+// DllMain entry point
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+{
+    if (ul_reason_for_call == DLL_PROCESS_ATTACH)
+    {
         DisableThreadLibraryCalls(hModule);
-        CreateThread(nullptr, 0, HackThread, hModule, 0, nullptr);
+        CreateThread(nullptr, 0, MainThread, hModule, 0, nullptr);
     }
     return TRUE;
 }
