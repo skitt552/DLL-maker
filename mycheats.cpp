@@ -1,213 +1,252 @@
 #include <windows.h>
-#include <tlhelp32.h>
 #include <d3d9.h>
+#include <dwmapi.h>
+#include <TlHelp32.h>
+#include <vector>
+#include <string>
+#include "MinHook.h"
 #include "imgui.h"
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
-#include <vector>
-#include <string>
-#include <ctime>
-#include <float.h>
-#include <psapi.h>
+#include <d3dx9.h>  // ✅ Needed for fonts
 
 #pragma comment(lib, "d3d9.lib")
+#pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "d3dx9.lib")
 
-// ==========================
-// Globals
-// ==========================
-bool showMenu = false;
-bool running = true;
-bool authorized = false;
-bool showLog = true;
+// ---------------------------
+// Typedefs & Globals
+// ---------------------------
+typedef HRESULT(APIENTRY* EndScene_t)(LPDIRECT3DDEVICE9 pDevice);
+EndScene_t oEndScene = nullptr;
 
-std::vector<std::string> logMessages;
+bool showMenu = true;
+bool espEnabled = true;
+bool aimbotEnabled = true;
+bool noRecoilEnabled = true;
+int aimSmoothing = 5;
 
-// Features
-bool espEnabled = false;
-bool skeletonESP = false;
-bool aimbotEnabled = false;
-bool radarEnabled = false;
-bool noRecoil = false;
-bool perfectTracking = false;
-int aimbotStrength = 5; // 1 = snappy, 10 = smooth
+// Example entity structure
+struct Entity {
+    float x, y, z;   // position
+    int health;
+    bool isEnemy;
+};
 
-// ==========================
-// Authorization key obfuscation
-// ==========================
-constexpr int OBF_SEED = (__TIME__[6] * __TIME__[7]) % 200 + 25;
-const unsigned char obfPart1[] = { '0' ^ OBF_SEED, 0 };
-const unsigned char obfPart2[] = { '2' ^ (OBF_SEED + 11), 0 };
-const unsigned char obfPart3[] = { '1' ^ (OBF_SEED - 7), '1' ^ (OBF_SEED ^ 3), 0 };
-char correctKey[5]; // holds "0211"
+// Global: detected addresses
+uintptr_t gameModuleBase = 0;
+uintptr_t entityListAddr = 0;
+uintptr_t viewAnglesAddr = 0;
+uintptr_t recoilAddr = 0;
 
-// ==========================
-// Player structures (stubs)
-// ==========================
-struct Player { int id; bool isAlive; int teamID; float x,y,z; };
-Player localPlayer;
-std::vector<Player> players;
+// Cached font
+ID3DXFont* g_pFont = nullptr;
 
-// ==========================
-// Helpers
-// ==========================
-void AddLog(const std::string& msg) {
-    logMessages.push_back(msg);
-    if (logMessages.size() > 50) logMessages.erase(logMessages.begin());
-}
-
-void DecryptKey() {
-    correctKey[0] = obfPart1[0] ^ OBF_SEED;
-    correctKey[1] = obfPart2[0] ^ (OBF_SEED + 11);
-    correctKey[2] = obfPart3[0] ^ (OBF_SEED - 7);
-    correctKey[3] = obfPart3[1] ^ (OBF_SEED ^ 3);
-    correctKey[4] = '\0';
-}
-
-bool IsEnemy(const Player& p) { return p.isAlive && p.teamID != localPlayer.teamID; }
-bool IsTeammate(const Player& p) { return p.isAlive && p.teamID == localPlayer.teamID; }
-
-void SelfDestruct() {
-    MessageBoxA(NULL, "❌ Unauthorized injection detected.", "Error", MB_OK | MB_ICONERROR);
-    running = false;
-    ExitProcess(0);
-}
-
-// ==========================
-// Features (stubs)
-// ==========================
-void RunESP() {}
-void RunSkeletonESP() {}
-void RunRadar() {}
-void RunNoRecoil() {}
-void RunAimbot() {}
-
-// ==========================
-// GUI
-// ==========================
-void RenderMenu() {
-    ImGui::Begin("SKITZZZZ", &showMenu, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Text("✅ Access Granted");
-    ImGui::Separator();
-    ImGui::Checkbox("ESP", &espEnabled);
-    ImGui::Checkbox("Skeleton ESP", &skeletonESP);
-    ImGui::Checkbox("Radar", &radarEnabled);
-    ImGui::Checkbox("Aimbot", &aimbotEnabled);
-    ImGui::SliderInt("Aimbot Strength", &aimbotStrength, 1, 10);
-    ImGui::Checkbox("Perfect Tracking", &perfectTracking);
-    ImGui::Checkbox("No Recoil", &noRecoil);
-    ImGui::Text("Press INSERT to toggle menu | END to exit");
-    ImGui::End();
-}
-
-void RenderKeyEntry() {
-    static char inputKey[256] = "";
-    ImGui::Begin("Authorization Required", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Text("Enter access key:");
-    ImGui::InputText("##key", inputKey, IM_ARRAYSIZE(inputKey), ImGuiInputTextFlags_Password);
-    if (ImGui::Button("Submit")) {
-        if (strcmp(inputKey, correctKey) == 0) {
-            authorized = true;
-            AddLog("✅ Access Granted");
-        } else {
-            AddLog("❌ Wrong Key, Self Destruct!");
-            SelfDestruct();
+// ---------------------------
+// Memory Helpers
+// ---------------------------
+uintptr_t GetModuleBase(const char* modName, DWORD procId)
+{
+    uintptr_t modBase = 0;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, procId);
+    if (snap != INVALID_HANDLE_VALUE)
+    {
+        MODULEENTRY32 modEntry;
+        modEntry.dwSize = sizeof(modEntry);
+        if (Module32First(snap, &modEntry))
+        {
+            do {
+                if (!_stricmp(modEntry.szModule, modName))
+                {
+                    modBase = (uintptr_t)modEntry.modBaseAddr;
+                    break;
+                }
+            } while (Module32Next(snap, &modEntry));
         }
     }
-    ImGui::End();
+    CloseHandle(snap);
+    return modBase;
 }
 
-// ==========================
-// Render log overlay
-// ==========================
-void RenderLogOverlay() {
-    if (!showLog) return;
+// Safer pattern scan
+uintptr_t PatternScan(uintptr_t start, size_t size, const char* pattern, const char* mask)
+{
+    MEMORY_BASIC_INFORMATION mbi{};
+    for (uintptr_t addr = start; addr < start + size;)
+    {
+        if (!VirtualQuery((LPCVOID)addr, &mbi, sizeof(mbi))) break;
 
-    ImGui::Begin("DLL Log", &showLog, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize);
-    for (const auto& msg : logMessages) {
-        ImGui::TextUnformatted(msg.c_str());
-    }
-    ImGui::End();
-}
-
-// ==========================
-// Main cheat thread
-// ==========================
-DWORD WINAPI MainThread(LPVOID param) {
-    DecryptKey();
-    AddLog("DLL loaded. Waiting for authorization...");
-    Sleep(1000); // Wait for DX9/ImGui initialization
-
-    while (running) {
-        if (GetAsyncKeyState(VK_END) & 1) running = false;
-        if (GetAsyncKeyState(VK_INSERT) & 1) showMenu = !showMenu;
-
-        ImGui_ImplDX9_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-
-        if (!authorized) RenderKeyEntry();
-        else if (showMenu) RenderMenu();
-
-        if (authorized) {
-            RunESP();
-            RunSkeletonESP();
-            RunRadar();
-            RunNoRecoil();
-            RunAimbot();
+        if (mbi.State == MEM_COMMIT && (mbi.Protect & (PAGE_EXECUTE_READWRITE | PAGE_READWRITE | PAGE_EXECUTE_READ)))
+        {
+            for (size_t i = 0; i < mbi.RegionSize; i++)
+            {
+                bool found = true;
+                for (size_t j = 0; mask[j]; j++)
+                {
+                    if (mask[j] != '?' && pattern[j] != *(char*)(addr + i + j))
+                    {
+                        found = false;
+                        break;
+                    }
+                }
+                if (found) return addr + i;
+            }
         }
-
-        RenderLogOverlay();
-
-        ImGui::EndFrame();
-        ImGui::Render();
-        ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-
-        Sleep(10);
+        addr += mbi.RegionSize;
     }
-
-    FreeLibraryAndExitThread((HMODULE)param, 0);
     return 0;
 }
 
-// ==========================
-// Process check
-// ==========================
-bool IsTargetProcess(const std::wstring& targetExe) {
-    wchar_t path[MAX_PATH] = {0};
-    if (GetModuleFileNameExW(GetCurrentProcess(), nullptr, path, MAX_PATH)) {
-        std::wstring s(path);
-        return (s.find(targetExe) != std::wstring::npos);
+// ---------------------------
+// ESP Drawing
+// ---------------------------
+void DrawTextSimple(LPDIRECT3DDEVICE9 pDevice, const char* text, int x, int y, D3DCOLOR color)
+{
+    if (!g_pFont)
+    {
+        D3DXCreateFont(pDevice, 16, 0, FW_BOLD, 1, FALSE, DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE, "Arial", &g_pFont);
     }
-    return false;
+
+    RECT rect;
+    SetRect(&rect, x, y, x + 200, y + 20);
+    g_pFont->DrawTextA(nullptr, text, -1, &rect, DT_LEFT | DT_NOCLIP, color);
 }
 
-// ==========================
-// DLL Entry with auto-hook
-// ==========================
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
-    if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hModule);
+// ---------------------------
+// Hooked EndScene
+// ---------------------------
+HRESULT APIENTRY hkEndScene(LPDIRECT3DDEVICE9 pDevice)
+{
+    static bool imguiInit = false;
+    if (!imguiInit)
+    {
+        ImGui::CreateContext();
+        ImGui_ImplWin32_Init(GetForegroundWindow());
+        ImGui_ImplDX9_Init(pDevice);
+        imguiInit = true;
+    }
 
-        CreateThread(nullptr, 0, [](LPVOID param) -> DWORD {
-            HMODULE hMod = (HMODULE)param;
-            const std::wstring targetProcess = L"YourProgram.exe"; // <-- set your program executable
+    ImGui_ImplDX9_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
 
-            AddLog("DLL attached, checking process...");
+    if (showMenu)
+    {
+        ImGui::Begin("Cheat Menu");
+        ImGui::Checkbox("ESP", &espEnabled);
+        ImGui::Checkbox("Aimbot", &aimbotEnabled);
+        ImGui::Checkbox("No Recoil", &noRecoilEnabled);
+        ImGui::SliderInt("Aim Smoothing", &aimSmoothing, 1, 10);
+        ImGui::End();
+    }
 
-            if (IsTargetProcess(targetProcess)) {
-                AddLog("Target process detected! Starting cheat thread...");
-                CreateThread(nullptr, 0, MainThread, hMod, 0, nullptr);
-                return 0;
+    // ESP
+    if (espEnabled && entityListAddr)
+    {
+        Entity* ents = reinterpret_cast<Entity*>(entityListAddr);
+        if (ents)  // ✅ Null check
+        {
+            for (int i = 0; i < 32; i++) // assume max 32
+            {
+                if (ents[i].health > 0 && ents[i].isEnemy)
+                {
+                    char buf[64];
+                    sprintf_s(buf, "Enemy HP: %d", ents[i].health);
+                    DrawTextSimple(pDevice, buf, 300, 200 + (i * 15), D3DCOLOR_ARGB(255, 255, 0, 0));
+                }
             }
+        }
+    }
 
-            while (!IsTargetProcess(targetProcess)) {
-                Sleep(100);
-            }
+    // Aimbot placeholder
+    if (aimbotEnabled && viewAnglesAddr && entityListAddr)
+    {
+        DrawTextSimple(pDevice, "Aimbot Active", 500, 100, D3DCOLOR_ARGB(255, 0, 255, 0));
+    }
 
-            AddLog("Target process started. Launching cheat thread...");
-            CreateThread(nullptr, 0, MainThread, hMod, 0, nullptr);
-            return 0;
-        }, hModule, 0, nullptr);
+    // No recoil
+    if (noRecoilEnabled && recoilAddr)
+    {
+        DWORD oldProtect;
+        if (VirtualProtect((LPVOID)recoilAddr, sizeof(float) * 2, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            *(float*)(recoilAddr) = 0.0f;
+            *(float*)(recoilAddr + 4) = 0.0f;
+            VirtualProtect((LPVOID)recoilAddr, sizeof(float) * 2, oldProtect, &oldProtect);
+
+            DrawTextSimple(pDevice, "No Recoil Applied", 500, 120, D3DCOLOR_ARGB(255, 0, 200, 255));
+        }
+    }
+
+    ImGui::EndFrame();
+    ImGui::Render();
+    ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+
+    return oEndScene(pDevice);
+}
+
+// ---------------------------
+// Hook Setup
+// ---------------------------
+DWORD WINAPI MainThread(LPVOID lpReserved)
+{
+    if (MH_Initialize() != MH_OK)
+        return 1;
+
+    DWORD pid = GetCurrentProcessId();
+    gameModuleBase = GetModuleBase("MyGame.exe", pid);
+
+    // Example pattern scans
+    entityListAddr = PatternScan(gameModuleBase, 0x1000000, "\x89\x54\x24\x10\x8B\x45", "xxxxxx");
+    viewAnglesAddr = PatternScan(gameModuleBase, 0x1000000, "\xF3\x0F\x11\x05\x00\x00\x00\x00", "xxxx????");
+    recoilAddr = PatternScan(gameModuleBase, 0x1000000, "\xF3\x0F\x11\x86\x00\x00\x00\x00", "xxxx????");
+
+    IDirect3D9* pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+    if (!pD3D) return 1;
+
+    D3DPRESENT_PARAMETERS d3dpp = {};
+    d3dpp.Windowed = TRUE;
+    d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    d3dpp.hDeviceWindow = GetForegroundWindow();
+
+    LPDIRECT3DDEVICE9 pDevice = nullptr;
+    if (FAILED(pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
+        d3dpp.hDeviceWindow,
+        D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+        &d3dpp, &pDevice)))
+    {
+        pD3D->Release();
+        return 1;
+    }
+
+    void** pVTable = *reinterpret_cast<void***>(pDevice);
+
+    if (MH_CreateHook(pVTable[42], &hkEndScene, reinterpret_cast<void**>(&oEndScene)) != MH_OK)
+        return 1;
+
+    if (MH_EnableHook(pVTable[42]) != MH_OK)
+        return 1;
+
+    pDevice->Release();
+    pD3D->Release();
+    return 0;
+}
+
+// ---------------------------
+// Entry Point
+// ---------------------------
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+{
+    if (ul_reason_for_call == DLL_PROCESS_ATTACH)
+        CreateThread(nullptr, 0, MainThread, nullptr, 0, nullptr);
+
+    else if (ul_reason_for_call == DLL_PROCESS_DETACH)
+    {
+        MH_DisableHook(MH_ALL_HOOKS);
+        MH_Uninitialize();
+        if (g_pFont) { g_pFont->Release(); g_pFont = nullptr; }
     }
     return TRUE;
 }
