@@ -32,11 +32,13 @@ bool noRecoil = false;
 bool perfectTracking = false;
 int aimbotStrength = 5; // 1 = snappy, 10 = smooth
 
+// ==========================
 // Authorization key obfuscation
+// ==========================
 constexpr int OBF_SEED = (__TIME__[6] * __TIME__[7]) % 200 + 25;
-const char obfPart1[] = { '0' ^ OBF_SEED, 0 };
-const char obfPart2[] = { '2' ^ (OBF_SEED + 11), 0 };
-const char obfPart3[] = { '1' ^ (OBF_SEED - 7), '1' ^ (OBF_SEED ^ 3), 0 };
+const unsigned char obfPart1[] = { '0' ^ OBF_SEED, 0 };
+const unsigned char obfPart2[] = { '2' ^ (OBF_SEED + 11), 0 };
+const unsigned char obfPart3[] = { '1' ^ (OBF_SEED - 7), '1' ^ (OBF_SEED ^ 3), 0 };
 char correctKey[5]; // holds "0211"
 
 // ==========================
@@ -71,14 +73,18 @@ void SelfDestruct() {
     ExitProcess(0);
 }
 
+// ==========================
 // Features (stubs)
+// ==========================
 void RunESP() {}
 void RunSkeletonESP() {}
 void RunRadar() {}
 void RunNoRecoil() {}
 void RunAimbot() {}
 
+// ==========================
 // GUI
+// ==========================
 void RenderMenu() {
     ImGui::Begin("SKITZZZZ", &showMenu, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::Text("✅ Access Granted");
