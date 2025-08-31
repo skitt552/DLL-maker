@@ -12,11 +12,19 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
+    - name: Download ImGui
+      run: |
+        git clone https://github.com/ocornut/imgui.git
+        xcopy imgui\*.h . /Y
+        xcopy imgui\backends\*.h . /Y
+        xcopy imgui\backends\*.cpp . /Y
+
     - name: Set up MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
     - name: Compile DLL
-      run: cl /LD mycheats.cpp /I. /Fe:mycheats.dll
+      run: |
+        cl /LD mycheats.cpp imgui*.cpp /I. /Fe:mycheats.dll user32.lib d3d9.lib
 
     - name: Upload DLL
       uses: actions/upload-artifact@v3
