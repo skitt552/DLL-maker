@@ -3,6 +3,8 @@ name: Build DLL
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -10,24 +12,19 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Download ImGui
+    - name: Install MinGW
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
+
+    - name: Build DLL
       run: |
-        git clone https://github.com/ocornut/imgui.git
-        xcopy imgui\*.h . /Y
-        xcopy imgui\backends\*.h . /Y
-        xcopy imgui\backends\*.cpp . /Y
-
-    - name: Set up MSVC
-      uses: ilammy/msvc-dev-cmd@v1
-
-    - name: Compile DLL
-      run: |
-        cl /LD mycheats.cpp imgui*.cpp /I. /Fe:mycheats.dll user32.lib d3d9.lib
+        g++ -shared -o mycheats.dll mycheats.cpp -Wl,--out-implib,libmycheats.a
 
     - name: Upload DLL
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: mycheats
+        name: mycheats-dll
         path: mycheats.dll
