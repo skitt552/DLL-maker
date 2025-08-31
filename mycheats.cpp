@@ -1,66 +1,100 @@
-// cheats.cpp
+// mycheats.cpp
 #include <windows.h>
-#include <iostream>
+#include <d3d9.h>
+#include "imgui.h"
+#include "imgui_impl_dx9.h"
+#include "imgui_impl_win32.h"
 
 // ==========================
 // Configurable Settings
 // ==========================
 struct Config {
     bool aimbot = true;
+    float aimFov = 120.0f;
+    float aimSmooth = 5.0f;
+
     bool espBox = true;
     bool espSkeleton = true;
+    ImVec4 espColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+
     bool radar = true;
-    bool triggerbot = true;
+    bool triggerbot = false;
 } config;
 
-bool running = true;
+bool menuOpen = true;
 
 // ==========================
-// Print Status Menu
+// Render Placeholders
 // ==========================
-void PrintMenu() {
-    system("cls"); // clear console for clean menu
-    std::cout << "==============================\n";
-    std::cout << "        Cheat Menu (F-Keys)   \n";
-    std::cout << "==============================\n";
-    std::cout << "[F1] Aimbot       : " << (config.aimbot ? "ON" : "OFF") << "\n";
-    std::cout << "[F2] ESP Box      : " << (config.espBox ? "ON" : "OFF") << "\n";
-    std::cout << "[F3] Skeleton ESP : " << (config.espSkeleton ? "ON" : "OFF") << "\n";
-    std::cout << "[F4] Radar        : " << (config.radar ? "ON" : "OFF") << "\n";
-    std::cout << "[F5] Triggerbot   : " << (config.triggerbot ? "ON" : "OFF") << "\n";
-    std::cout << "------------------------------\n";
-    std::cout << "[F6] Unload DLL & Exit\n";
-    std::cout << "==============================\n";
+void RenderESP(ImDrawList* drawList) {
+    if (config.espBox)
+        drawList->AddRect(ImVec2(200,200), ImVec2(260,320), ImColor(config.espColor));
+
+    if (config.espSkeleton)
+        drawList->AddLine(ImVec2(230,200), ImVec2(230,320), ImColor(config.espColor), 2.0f);
+}
+
+void RenderRadar(ImDrawList* drawList) {
+    if (!config.radar) return;
+
+    ImVec2 radarPos = ImVec2(100, 100);
+    float radarSize = 120;
+    drawList->AddRect(radarPos, ImVec2(radarPos.x + radarSize, radarPos.y + radarSize), IM_COL32(255,255,255,255));
+    drawList->AddCircleFilled(ImVec2(radarPos.x + radarSize/2, radarPos.y + radarSize/2), 3, IM_COL32(255,0,0,255));
+}
+
+void RenderAimbotFov(ImDrawList* drawList, ImVec2 screenSize) {
+    if (!config.aimbot) return;
+
+    ImVec2 center = ImVec2(screenSize.x/2, screenSize.y/2);
+    drawList->AddCircle(center, config.aimFov, IM_COL32(0,255,0,150), 64, 2.0f);
+}
+
+// ==========================
+// Cheat Menu
+// ==========================
+void RenderMenu() {
+    if (!menuOpen) return;
+
+    ImGui::Begin("Cheat Menu");
+
+    ImGui::Checkbox("Aimbot", &config.aimbot);
+    if (config.aimbot) {
+        ImGui::SliderFloat("FOV", &config.aimFov, 10.0f, 360.0f);
+        ImGui::SliderFloat("Smooth", &config.aimSmooth, 1.0f, 20.0f);
+    }
+
+    ImGui::Checkbox("Box ESP", &config.espBox);
+    ImGui::Checkbox("Skeleton ESP", &config.espSkeleton);
+    ImGui::ColorEdit4("ESP Color", (float*)&config.espColor);
+
+    ImGui::Checkbox("2D Radar", &config.radar);
+    ImGui::Checkbox("Triggerbot", &config.triggerbot);
+
+    ImGui::End();
 }
 
 // ==========================
 // Main Hack Thread
 // ==========================
 DWORD WINAPI HackThread(HMODULE hModule) {
-    // Open console
-    AllocConsole();
-    FILE* f;
-    freopen_s(&f, "CONOUT$", "w", stdout);
-
-    PrintMenu(); // show menu first time
-
-    while (running) {
-        if (GetAsyncKeyState(VK_F1) & 1) { config.aimbot = !config.aimbot; PrintMenu(); }
-        if (GetAsyncKeyState(VK_F2) & 1) { config.espBox = !config.espBox; PrintMenu(); }
-        if (GetAsyncKeyState(VK_F3) & 1) { config.espSkeleton = !config.espSkeleton; PrintMenu(); }
-        if (GetAsyncKeyState(VK_F4) & 1) { config.radar = !config.radar; PrintMenu(); }
-        if (GetAsyncKeyState(VK_F5) & 1) { config.triggerbot = !config.triggerbot; PrintMenu(); }
-
-        if (GetAsyncKeyState(VK_F6) & 1) {
-            std::cout << "\n[+] Unloading DLL...\n";
-            running = false;
+    while (true) {
+        if (GetAsyncKeyState(VK_INSERT) & 1) {
+            menuOpen = !menuOpen;
         }
 
-        Sleep(100); // avoid CPU overuse
+        ImGuiIO& io = ImGui::GetIO();
+        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+
+        RenderESP(drawList);
+        RenderRadar(drawList);
+        RenderAimbotFov(drawList, io.DisplaySize);
+
+        if (menuOpen) RenderMenu();
+
+        Sleep(16);
     }
 
-    fclose(f);
-    FreeConsole();
     FreeLibraryAndExitThread(hModule, 0);
     return 0;
 }
