@@ -25,7 +25,7 @@ struct Config {
     bool triggerbot = false;
 } config;
 
-static bool menuOpen = true;
+bool menuOpen = true;
 
 // ==========================
 // Render Placeholders
@@ -42,9 +42,9 @@ void RenderRadar(ImDrawList* drawList) {
     if (!config.radar) return;
 
     ImVec2 radarPos = ImVec2(100, 100);
-    float radarSize = 120.0f;
+    float radarSize = 120;
     drawList->AddRect(radarPos, ImVec2(radarPos.x + radarSize, radarPos.y + radarSize), IM_COL32(255,255,255,255));
-    drawList->AddCircleFilled(ImVec2(radarPos.x + radarSize/2, radarPos.y + radarSize/2), 3.0f, IM_COL32(255,0,0,255));
+    drawList->AddCircleFilled(ImVec2(radarPos.x + radarSize/2, radarPos.y + radarSize/2), 3, IM_COL32(255,0,0,255));
 }
 
 void RenderAimbotFov(ImDrawList* drawList, ImVec2 screenSize) {
@@ -79,14 +79,15 @@ void RenderMenu() {
 }
 
 // ==========================
-// Main Hack Thread
+// Main Thread (DLL-safe loop)
 // ==========================
-DWORD WINAPI HackThread(LPVOID hModule) {
+DWORD WINAPI HackThread(HMODULE hModule) {
     while (true) {
         if (GetAsyncKeyState(VK_INSERT) & 1) {
             menuOpen = !menuOpen;
         }
 
+        // ImGui rendering placeholders
         ImGuiIO& io = ImGui::GetIO();
         ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 
@@ -99,17 +100,17 @@ DWORD WINAPI HackThread(LPVOID hModule) {
         Sleep(16);
     }
 
-    FreeLibraryAndExitThread((HMODULE)hModule, 0);
+    FreeLibraryAndExitThread(hModule, 0);
     return 0;
 }
 
 // ==========================
 // DLL Entry Point
 // ==========================
-BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID) {
+BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     if (dwReason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
-        CreateThread(nullptr, 0, HackThread, hModule, 0, nullptr);
+        CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)HackThread, hModule, 0, nullptr);
     }
     return TRUE;
 }
