@@ -1,141 +1,122 @@
-// mycheats.cpp
 #include <windows.h>
 #include <d3d9.h>
-
-// ImGui core
 #include "imgui.h"
-
-// ImGui backends
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
+#include <ctime>
+#include <string>
 
-// ==========================
-// Configurable Settings
-// ==========================
-struct Config {
-    bool aimbot = true;
-    float aimFov = 120.0f;
-    float aimSmooth = 5.0f;
+#pragma comment(lib, "d3d9.lib")
 
-    bool espBox = true;
-    bool espSkeleton = true;
-    ImVec4 espColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+// Globals
+bool showMenu = false;
+bool running = true;
+bool authorized = false;
 
-    bool radar = true;
-    bool triggerbot = false;
-} config;
+// Build-time obfuscation seed (changes every build)
+constexpr int OBF_SEED = (__TIME__[6] * __TIME__[7]) % 200 + 25;
 
-bool menuOpen = false;
-bool authorized = false; // locked until correct key entered
+// Multi-layer key storage ("0211"), broken into chunks
+const char obfPart1[] = { '0' ^ OBF_SEED, 0 };
+const char obfPart2[] = { '2' ^ (OBF_SEED + 11), 0 };
+const char obfPart3[] = { '1' ^ (OBF_SEED - 7), '1' ^ (OBF_SEED ^ 3), 0 };
 
-// ==========================
-// Render Placeholders
-// ==========================
-void RenderESP(ImDrawList* drawList) {
-    if (config.espBox)
-        drawList->AddRect(ImVec2(200,200), ImVec2(260,320), ImColor(config.espColor));
+char correctKey[5]; // will hold "0211"
 
-    if (config.espSkeleton)
-        drawList->AddLine(ImVec2(230,200), ImVec2(230,320), ImColor(config.espColor), 2.0f);
+// Forward declarations
+DWORD WINAPI MainThread(LPVOID param);
+void SelfDestruct();
+void RenderMenu();
+void RenderKeyEntry();
+void DecryptKey();
+
+// Runtime decryption
+void DecryptKey()
+{
+    // Rebuild dynamically from parts
+    correctKey[0] = obfPart1[0] ^ OBF_SEED;
+    correctKey[1] = obfPart2[0] ^ (OBF_SEED + 11);
+    correctKey[2] = obfPart3[0] ^ (OBF_SEED - 7);
+    correctKey[3] = obfPart3[1] ^ (OBF_SEED ^ 3);
+    correctKey[4] = '\0';
 }
 
-void RenderRadar(ImDrawList* drawList) {
-    if (!config.radar) return;
+// Self destruct (for wrong key/forced injection)
+void SelfDestruct()
+{
+    MessageBoxA(NULL, "❌ Unauthorized injection detected. Self-destructing...", "Error", MB_OK | MB_ICONERROR);
+    running = false;
 
-    ImVec2 radarPos = ImVec2(100, 100);
-    float radarSize = 120;
-    drawList->AddRect(radarPos, ImVec2(radarPos.x + radarSize, radarPos.y + radarSize), IM_COL32(255,255,255,255));
-    drawList->AddCircleFilled(ImVec2(radarPos.x + radarSize/2, radarPos.y + radarSize/2), 3, IM_COL32(255,0,0,255));
+    char path[MAX_PATH];
+    GetModuleFileNameA((HMODULE)GetModuleHandle(NULL), path, MAX_PATH);
+    DeleteFileA(path);
+
+    ExitProcess(0);
 }
 
-void RenderAimbotFov(ImDrawList* drawList, ImVec2 screenSize) {
-    if (!config.aimbot) return;
-
-    ImVec2 center = ImVec2(screenSize.x/2, screenSize.y/2);
-    drawList->AddCircle(center, config.aimFov, IM_COL32(0,255,0,150), 64, 2.0f);
-}
-
-// ==========================
-// SKITZZZZ Menu
-// ==========================
-void RenderMenu() {
-    if (!menuOpen) return;
-
-    ImGui::Begin("SKITZZZZ", &menuOpen);
-
-    ImGui::Checkbox("Aimbot", &config.aimbot);
-    if (config.aimbot) {
-        ImGui::SliderFloat("FOV", &config.aimFov, 10.0f, 360.0f);
-        ImGui::SliderFloat("Smooth", &config.aimSmooth, 1.0f, 20.0f);
-    }
-
-    ImGui::Checkbox("Box ESP", &config.espBox);
-    ImGui::Checkbox("Skeleton ESP", &config.espSkeleton);
-    ImGui::ColorEdit4("ESP Color", (float*)&config.espColor);
-
-    ImGui::Checkbox("2D Radar", &config.radar);
-    ImGui::Checkbox("Triggerbot", &config.triggerbot);
-
+// Menu GUI
+void RenderMenu()
+{
+    ImGui::Begin("SKITZZZZ", &showMenu, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Text("✅ Access Granted");
+    ImGui::Separator();
+    ImGui::Text("Press INSERT to toggle this menu");
+    ImGui::Text("Press END to exit cleanly");
     ImGui::End();
 }
 
-// ==========================
-// Authorization GUI
-// ==========================
-void RenderAuth(HMODULE hModule) {
-    static char keyBuffer[32] = "";
-    ImGui::Begin("Authorization", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+// Key entry GUI
+void RenderKeyEntry()
+{
+    static char inputKey[256] = "";
+    ImGui::Begin("Authorization Required", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Text("Enter access key:");
+    ImGui::InputText("##key", inputKey, IM_ARRAYSIZE(inputKey), ImGuiInputTextFlags_Password);
 
-    ImGui::InputText("Enter Key", keyBuffer, sizeof(keyBuffer), ImGuiInputTextFlags_Password);
     if (ImGui::Button("Submit")) {
-        if (strcmp(keyBuffer, "0211") == 0) {
+        if (strcmp(inputKey, correctKey) == 0) {
             authorized = true;
+            MessageBoxA(NULL, "✅ Access Granted!", "SKITZZZZ", MB_OK | MB_ICONINFORMATION);
         } else {
-            // Wrong key → self destruct
-            ImGui::End();
-            FreeLibraryAndExitThread(hModule, 0);
+            SelfDestruct();
         }
     }
-
     ImGui::End();
 }
 
-// ==========================
-// Main Hack Thread
-// ==========================
-DWORD WINAPI HackThread(LPVOID hModule) {
-    while (true) {
-        if (GetAsyncKeyState(VK_INSERT) & 1 && authorized) {
-            menuOpen = !menuOpen;
+// Main Thread
+DWORD WINAPI MainThread(LPVOID param)
+{
+    DecryptKey();
+
+    while (running) {
+        if (GetAsyncKeyState(VK_END) & 1) {
+            running = false;
         }
 
-        ImGuiIO& io = ImGui::GetIO();
-        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-
-        if (authorized) {
-            RenderESP(drawList);
-            RenderRadar(drawList);
-            RenderAimbotFov(drawList, io.DisplaySize);
-
-            if (menuOpen) RenderMenu();
+        if (!authorized) {
+            RenderKeyEntry();
         } else {
-            RenderAuth((HMODULE)hModule);
+            if (GetAsyncKeyState(VK_INSERT) & 1) {
+                showMenu = !showMenu;
+            }
+            if (showMenu) {
+                RenderMenu();
+            }
         }
-
-        Sleep(16);
+        Sleep(10);
     }
 
-    FreeLibraryAndExitThread((HMODULE)hModule, 0);
+    FreeLibraryAndExitThread((HMODULE)param, 0);
     return 0;
 }
 
-// ==========================
-// DLL Entry Point
-// ==========================
-BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
-    if (dwReason == DLL_PROCESS_ATTACH) {
+// DLL entry
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+{
+    if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
-        CreateThread(nullptr, 0, HackThread, hModule, 0, nullptr);
+        CreateThread(nullptr, 0, MainThread, hModule, 0, nullptr);
     }
     return TRUE;
 }
