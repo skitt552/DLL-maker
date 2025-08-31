@@ -9,9 +9,6 @@
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
 
-// ==========================
-// Configurable Settings
-// ==========================
 struct Config {
     bool aimbot = true;
     float aimFov = 120.0f;
@@ -27,9 +24,6 @@ struct Config {
 
 bool menuOpen = true;
 
-// ==========================
-// Render Placeholders
-// ==========================
 void RenderESP(ImDrawList* drawList) {
     if (config.espBox)
         drawList->AddRect(ImVec2(200,200), ImVec2(260,320), ImColor(config.espColor));
@@ -54,9 +48,6 @@ void RenderAimbotFov(ImDrawList* drawList, ImVec2 screenSize) {
     drawList->AddCircle(center, config.aimFov, IM_COL32(0,255,0,150), 64, 2.0f);
 }
 
-// ==========================
-// Cheat Menu
-// ==========================
 void RenderMenu() {
     if (!menuOpen) return;
 
@@ -78,9 +69,6 @@ void RenderMenu() {
     ImGui::End();
 }
 
-// ==========================
-// Main Hack Thread
-// ==========================
 DWORD WINAPI HackThread(HMODULE hModule) {
     while (true) {
         if (GetAsyncKeyState(VK_INSERT) & 1) {
@@ -103,10 +91,7 @@ DWORD WINAPI HackThread(HMODULE hModule) {
     return 0;
 }
 
-// ==========================
-// DLL Entry Point
-// ==========================
-BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
+BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID) {
     if (dwReason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)HackThread, hModule, 0, nullptr);
