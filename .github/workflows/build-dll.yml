@@ -1,10 +1,10 @@
-name: Build DLL
+name: Build Cheats DLL
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -20,13 +20,9 @@ jobs:
           update: true
           install: >
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-d3d9
-            mingw-w64-x86_64-psapi
-            mingw-w64-x86_64-gdi
-            mingw-w64-x86_64-winpthreads
-            mingw-w64-x86_64-dwmapi
+            make
 
-      - name: Build DLL
+      - name: Build Cheats DLL
         shell: msys2 {0}
         run: |
           g++ -shared -o mycheats.dll \
@@ -44,5 +40,5 @@ jobs:
       - name: Upload DLL
         uses: actions/upload-artifact@v4
         with:
-          name: mycheats-dll
+          name: cheats-dll
           path: mycheats.dll
