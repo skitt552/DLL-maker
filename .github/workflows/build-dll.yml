@@ -1,27 +1,26 @@
 name: Build DLL
 
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+on: [push]
 
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Set up MSVC
-      uses: ilammy/msvc-dev-cmd@v1
+      - name: Install MinGW
+        run: choco install mingw -y
 
-    - name: Compile DLL
-      run: cl /LD mycheats.cpp /Fe:mycheats.dll
+      - name: Add MinGW to PATH
+        run: echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: mycheats-dll
-        path: mycheats.dll
+      - name: Build DLL
+        run: |
+          g++ -shared -o mycheats.dll mycheats.cpp -static -lgdi32 -ld3d9
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v3
+        with:
+          name: mycheats
+          path: mycheats.dll
