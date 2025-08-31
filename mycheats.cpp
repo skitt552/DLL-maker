@@ -1,7 +1,11 @@
 // mycheats.cpp
 #include <windows.h>
 #include <d3d9.h>
+
+// ImGui core
 #include "imgui.h"
+
+// ImGui backends (required for DX9 + Win32)
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
 
