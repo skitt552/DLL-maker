@@ -5,7 +5,7 @@
 // ImGui core
 #include "imgui.h"
 
-// ImGui backends (required for DX9 + Win32)
+// ImGui backends (for DX9 + Win32)
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
 
@@ -79,7 +79,7 @@ void RenderMenu() {
 }
 
 // ==========================
-// Main Thread (DLL-safe loop)
+// Main Hack Thread
 // ==========================
 DWORD WINAPI HackThread(HMODULE hModule) {
     while (true) {
@@ -87,7 +87,6 @@ DWORD WINAPI HackThread(HMODULE hModule) {
             menuOpen = !menuOpen;
         }
 
-        // ImGui rendering placeholders
         ImGuiIO& io = ImGui::GetIO();
         ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 
