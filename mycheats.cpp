@@ -8,7 +8,6 @@
 #include <string>
 #include <ctime>
 #include <float.h>
-#include <tchar.h>
 #include <psapi.h>
 
 #pragma comment(lib, "d3d9.lib")
@@ -195,14 +194,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
             AddLog("DLL attached, checking process...");
 
-            // If already in target process, start immediately
             if (IsTargetProcess(targetProcess)) {
                 AddLog("Target process detected! Starting cheat thread...");
                 CreateThread(nullptr, 0, MainThread, hMod, 0, nullptr);
                 return 0;
             }
 
-            // Otherwise, wait until target process starts
             while (!IsTargetProcess(targetProcess)) {
                 Sleep(100);
             }
