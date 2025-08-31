@@ -1,72 +1,141 @@
+// mycheats.cpp
 #include <windows.h>
+#include <d3d9.h>
+
+// ImGui core
 #include "imgui.h"
-#include "backends/imgui_impl_dx9.h"
-#include "backends/imgui_impl_win32.h"
 
-// Forward declare WndProc handler
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
-    HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+// ImGui backends
+#include "imgui_impl_dx9.h"
+#include "imgui_impl_win32.h"
 
-// Global state
-HWND g_hWnd = nullptr;
-LPDIRECT3DDEVICE9 g_pDevice = nullptr;
-bool g_Running = true;
+// ==========================
+// Configurable Settings
+// ==========================
+struct Config {
+    bool aimbot = true;
+    float aimFov = 120.0f;
+    float aimSmooth = 5.0f;
 
-// Thread for our ImGui loop
-DWORD WINAPI MainThread(LPVOID lpReserved)
-{
-    // Initialize ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    bool espBox = true;
+    bool espSkeleton = true;
+    ImVec4 espColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
 
-    ImGui::StyleColorsDark();
+    bool radar = true;
+    bool triggerbot = false;
+} config;
 
-    // Initialize platform/renderer backends
-    ImGui_ImplWin32_Init(g_hWnd);
-    ImGui_ImplDX9_Init(g_pDevice);
+bool menuOpen = false;
+bool authorized = false; // locked until correct key entered
 
-    // Main loop
-    while (g_Running)
-    {
-        ImGui_ImplDX9_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
+// ==========================
+// Render Placeholders
+// ==========================
+void RenderESP(ImDrawList* drawList) {
+    if (config.espBox)
+        drawList->AddRect(ImVec2(200,200), ImVec2(260,320), ImColor(config.espColor));
 
-        // Example window
-        ImGui::Begin("Hello from ImGui v4!");
-        ImGui::Text("This is a test overlay.");
-        if (ImGui::Button("Exit"))
-            g_Running = false;
-        ImGui::End();
+    if (config.espSkeleton)
+        drawList->AddLine(ImVec2(230,200), ImVec2(230,320), ImColor(config.espColor), 2.0f);
+}
 
-        // Render
-        ImGui::EndFrame();
-        g_pDevice->BeginScene();
-        ImGui::Render();
-        ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-        g_pDevice->EndScene();
+void RenderRadar(ImDrawList* drawList) {
+    if (!config.radar) return;
 
-        Sleep(10);
+    ImVec2 radarPos = ImVec2(100, 100);
+    float radarSize = 120;
+    drawList->AddRect(radarPos, ImVec2(radarPos.x + radarSize, radarPos.y + radarSize), IM_COL32(255,255,255,255));
+    drawList->AddCircleFilled(ImVec2(radarPos.x + radarSize/2, radarPos.y + radarSize/2), 3, IM_COL32(255,0,0,255));
+}
+
+void RenderAimbotFov(ImDrawList* drawList, ImVec2 screenSize) {
+    if (!config.aimbot) return;
+
+    ImVec2 center = ImVec2(screenSize.x/2, screenSize.y/2);
+    drawList->AddCircle(center, config.aimFov, IM_COL32(0,255,0,150), 64, 2.0f);
+}
+
+// ==========================
+// SKITZZZZ Menu
+// ==========================
+void RenderMenu() {
+    if (!menuOpen) return;
+
+    ImGui::Begin("SKITZZZZ", &menuOpen);
+
+    ImGui::Checkbox("Aimbot", &config.aimbot);
+    if (config.aimbot) {
+        ImGui::SliderFloat("FOV", &config.aimFov, 10.0f, 360.0f);
+        ImGui::SliderFloat("Smooth", &config.aimSmooth, 1.0f, 20.0f);
     }
 
-    // Cleanup
-    ImGui_ImplDX9_Shutdown();
-    ImGui_ImplWin32_Shutdown();
-    ImGui::DestroyContext();
+    ImGui::Checkbox("Box ESP", &config.espBox);
+    ImGui::Checkbox("Skeleton ESP", &config.espSkeleton);
+    ImGui::ColorEdit4("ESP Color", (float*)&config.espColor);
 
-    FreeLibraryAndExitThread((HMODULE)lpReserved, 0);
+    ImGui::Checkbox("2D Radar", &config.radar);
+    ImGui::Checkbox("Triggerbot", &config.triggerbot);
+
+    ImGui::End();
+}
+
+// ==========================
+// Authorization GUI
+// ==========================
+void RenderAuth(HMODULE hModule) {
+    static char keyBuffer[32] = "";
+    ImGui::Begin("Authorization", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImGui::InputText("Enter Key", keyBuffer, sizeof(keyBuffer), ImGuiInputTextFlags_Password);
+    if (ImGui::Button("Submit")) {
+        if (strcmp(keyBuffer, "0211") == 0) {
+            authorized = true;
+        } else {
+            // Wrong key → self destruct
+            ImGui::End();
+            FreeLibraryAndExitThread(hModule, 0);
+        }
+    }
+
+    ImGui::End();
+}
+
+// ==========================
+// Main Hack Thread
+// ==========================
+DWORD WINAPI HackThread(LPVOID hModule) {
+    while (true) {
+        if (GetAsyncKeyState(VK_INSERT) & 1 && authorized) {
+            menuOpen = !menuOpen;
+        }
+
+        ImGuiIO& io = ImGui::GetIO();
+        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+
+        if (authorized) {
+            RenderESP(drawList);
+            RenderRadar(drawList);
+            RenderAimbotFov(drawList, io.DisplaySize);
+
+            if (menuOpen) RenderMenu();
+        } else {
+            RenderAuth((HMODULE)hModule);
+        }
+
+        Sleep(16);
+    }
+
+    FreeLibraryAndExitThread((HMODULE)hModule, 0);
     return 0;
 }
 
-// DllMain entry point
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
-{
-    if (ul_reason_for_call == DLL_PROCESS_ATTACH)
-    {
+// ==========================
+// DLL Entry Point
+// ==========================
+BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
+    if (dwReason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
-        CreateThread(nullptr, 0, MainThread, hModule, 0, nullptr);
+        CreateThread(nullptr, 0, HackThread, hModule, 0, nullptr);
     }
     return TRUE;
 }
