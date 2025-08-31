@@ -14,29 +14,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Install MSYS2
-      - name: Install MSYS2
-        shell: powershell
-        run: |
-          Invoke-WebRequest -Uri https://repo.msys2.org/distrib/x86_64/msys2-base-x86_64-20230907.tar.xz -OutFile msys2.tar.xz
-          tar -xf msys2.tar.xz -C $env:USERPROFILE
-          $env:MSYS2_PATH = "$env:USERPROFILE\msys64\usr\bin"
-          setx PATH "$env:MSYS2_PATH;$env:PATH"
-
-      # Update MSYS2 and install MinGW GCC + required libs
-      - name: Setup MinGW and libraries
-        shell: bash
-        run: |
-          pacman -Syu --noconfirm
-          pacman -S --needed --noconfirm mingw-w64-x86_64-gcc \
-            mingw-w64-x86_64-d3d9 \
-            mingw-w64-x86_64-psapi \
-            mingw-w64-x86_64-gdi \
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-d3d9
+            mingw-w64-x86_64-psapi
+            mingw-w64-x86_64-gdi
             mingw-w64-x86_64-winpthreads
+            mingw-w64-x86_64-dwmapi
 
-      # Build the DLL
-      - name: Compile DLL
-        shell: bash
+      - name: Build DLL
+        shell: msys2 {0}
         run: |
           g++ -shared -o mycheats.dll \
               mycheats.cpp \
@@ -50,7 +41,6 @@ jobs:
               -ld3d9 -ldwmapi -lpsapi -lgdi32 -luser32 \
               -static-libgcc -static-libstdc++
 
-      # Upload the DLL as an artifact for download
       - name: Upload DLL
         uses: actions/upload-artifact@v4
         with:
