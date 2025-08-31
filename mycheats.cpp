@@ -5,9 +5,9 @@
 // ImGui core
 #include "imgui.h"
 
-// ImGui backends (for DX9 + Win32)
-#include "imgui_impl_dx9.h"
-#include "imgui_impl_win32.h"
+// ImGui backends
+#include "backends/imgui_impl_dx9.h"
+#include "backends/imgui_impl_win32.h"
 
 // ==========================
 // Configurable Settings
@@ -25,10 +25,13 @@ struct Config {
     bool triggerbot = false;
 } config;
 
-static bool menuOpen = true;
+bool menuOpen = true;
+
+// Forward declare Win32 message handler
+extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 // ==========================
-// Render Placeholders
+// Render Functions
 // ==========================
 void RenderESP(ImDrawList* drawList) {
     if (config.espBox)
@@ -42,9 +45,9 @@ void RenderRadar(ImDrawList* drawList) {
     if (!config.radar) return;
 
     ImVec2 radarPos = ImVec2(100, 100);
-    float radarSize = 120.0f;
+    float radarSize = 120;
     drawList->AddRect(radarPos, ImVec2(radarPos.x + radarSize, radarPos.y + radarSize), IM_COL32(255,255,255,255));
-    drawList->AddCircleFilled(ImVec2(radarPos.x + radarSize/2, radarPos.y + radarSize/2), 3.0f, IM_COL32(255,0,0,255));
+    drawList->AddCircleFilled(ImVec2(radarPos.x + radarSize/2, radarPos.y + radarSize/2), 3, IM_COL32(255,0,0,255));
 }
 
 void RenderAimbotFov(ImDrawList* drawList, ImVec2 screenSize) {
@@ -54,13 +57,10 @@ void RenderAimbotFov(ImDrawList* drawList, ImVec2 screenSize) {
     drawList->AddCircle(center, config.aimFov, IM_COL32(0,255,0,150), 64, 2.0f);
 }
 
-// ==========================
-// Cheat Menu
-// ==========================
 void RenderMenu() {
     if (!menuOpen) return;
 
-    ImGui::Begin("Cheat Menu");
+    ImGui::Begin("Troll Menu");
 
     ImGui::Checkbox("Aimbot", &config.aimbot);
     if (config.aimbot) {
@@ -79,9 +79,10 @@ void RenderMenu() {
 }
 
 // ==========================
-// Main Thread
+// Hack Thread
 // ==========================
-DWORD WINAPI HackThread(LPVOID lpReserved) {
+DWORD WINAPI HackThread(LPVOID hModule) {
+    // Main loop
     while (true) {
         if (GetAsyncKeyState(VK_INSERT) & 1) {
             menuOpen = !menuOpen;
@@ -99,12 +100,12 @@ DWORD WINAPI HackThread(LPVOID lpReserved) {
         Sleep(16);
     }
 
-    FreeLibraryAndExitThread((HMODULE)lpReserved, 0);
+    FreeLibraryAndExitThread((HMODULE)hModule, 0);
     return 0;
 }
 
 // ==========================
-// DLL Entry Point
+// DllMain
 // ==========================
 BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     if (dwReason == DLL_PROCESS_ATTACH) {
