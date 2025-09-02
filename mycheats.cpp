@@ -147,4 +147,22 @@ DWORD WINAPI MainThread(LPVOID lpReserved) {
     if (MH_CreateHook(pVTable[42], &hkEndScene, reinterpret_cast<void**>(&oEndScene)) != MH_OK)
         return 1;
 
-    if (MH_EnableHook(pVTable[42])
+    if (MH_EnableHook(pVTable[42]) != MH_OK)
+        return 1;
+
+    pDevice->Release();
+    pD3D->Release();
+    return 0;
+}
+
+// DLL Entry Point
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
+    if (ul_reason_for_call == DLL_PROCESS_ATTACH)
+        CreateThread(nullptr, 0, MainThread, nullptr, 0, nullptr);
+
+    else if (ul_reason_for_call == DLL_PROCESS_DETACH) {
+        MH_DisableHook(MH_ALL_HOOKS);
+        MH_Uninitialize();
+    }
+    return TRUE;
+}
